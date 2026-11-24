@@ -8,6 +8,7 @@ const API_SECRET       = 'CambiaQuestaChiaveSegreta2026!';
 $baseCfd = 'https://centrofunzionale' . '.regione.basilicata.it/it/sensoriTempoReale.php';
 $urls = [
     'T'  => $baseCfd . '?st=T&defer=1',
+    'UR' => $baseCfd . '?st=UR&defer=1',
     'VV' => $baseCfd . '?st=VV&defer=1',
     'P'  => $baseCfd . '?st=P&defer=1',
 ];
@@ -96,7 +97,7 @@ try {
         }
     };
 
-    // 1. TEMPERATURE
+    // 1. TEMPERATURE (st=T)
     $resT = estraiDatiDaJs(scaricaComeChrome($urls['T']));
     foreach ($resT['righe'] as [$staz, $bac, $sens, $val, $ora]) {
         if (str_contains($ora, '/') || $val === '-') continue;
@@ -107,7 +108,18 @@ try {
         }
     }
 
-    // 2. VENTO
+    // 2. UMIDITÀ RELATIVA (st=UR)
+    $resUR = estraiDatiDaJs(scaricaComeChrome($urls['UR']));
+    foreach ($resUR['righe'] as [$staz, $bac, $sens, $val, $ora]) {
+        if (str_contains($ora, '/') || $val === '-') continue;
+        $inizializza($staz, $bac, $resUR['markers']);
+        if (stripos($sens, 'Umidit') !== false) {
+            $dati[$staz]['UR'] = pulisciNum($val);
+            $dati[$staz]['ora_dato'] ??= $ora;
+        }
+    }
+
+    // 3. VENTO (st=VV)
     $resVV = estraiDatiDaJs(scaricaComeChrome($urls['VV']));
     foreach ($resVV['righe'] as [$staz, $bac, $sens, $val, $ora]) {
         if (str_contains($ora, '/') || $val === '-') continue;
@@ -121,7 +133,7 @@ try {
         }
     }
 
-    // 3. PRECIPITAZIONI
+    // 4. PRECIPITAZIONI (st=P)
     $resP = estraiDatiDaJs(scaricaComeChrome($urls['P']));
     foreach ($resP['righe'] as [$staz, $bac, $sens, $val, $ora]) {
         if (str_contains($ora, '/') || $val === '-') continue;
@@ -136,7 +148,7 @@ try {
         throw new RuntimeException('Nessuna rilevazione estratta.');
     }
 
-    // 4. SPEDISCE IL JSON AD ALTERVISTA
+    // 5. SPEDISCE IL JSON AD ALTERVISTA
     $ch = curl_init(DESTINAZIONE_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
