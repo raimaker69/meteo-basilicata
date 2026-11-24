@@ -1,0 +1,28 @@
+name: Aggiorna Meteo Basilicata
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  aggiorna:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scarica repository
+        uses: actions/checkout@v4
+
+      - name: Installa curl-impersonate (firma Chrome)
+        run: |
+          URL="https://github.com""/lwthiker/curl-impersonate/releases/download/v0.6.1/curl-impersonate-v0.6.1.x86_64-linux-gnu.tar.gz"
+          wget -q "$URL" -O curl.tar.gz
+          sudo tar -xzf curl.tar.gz -C /usr/local/bin/
+
+      - name: Configura PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: curl, dom, mbstring
+
+      - name: Esegui invia_cfd.php
+        run: php invia_cfd.php
