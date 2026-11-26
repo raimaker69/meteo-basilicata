@@ -1,7 +1,6 @@
 <?php
 declare(strict_types=1);
 
-// 1. URL completo del file ricevente caricato sul tuo spazio Altervista
 const DESTINAZIONE_URL = 'https://retestazionimeteo' . '.altervista.org/cfd_basilicata/ricevi_cfd.php';
 const API_SECRET       = 'CambiaQuestaChiaveSegreta2026!';
 
@@ -11,11 +10,9 @@ $urls = [
     'UR' => $baseCfd . '?st=UR&defer=1',
     'VV' => $baseCfd . '?st=VV&defer=1',
     'P'  => $baseCfd . '?st=P&defer=1',
+    'I'  => $baseCfd . '?st=I&defer=1',
 ];
 
-/**
- * Scarica il file &defer=1 usando curl_chrome116 (impronta TLS identica a Google Chrome)
- */
 function scaricaComeChrome(string $url): string
 {
     $cmd = 'curl_chrome116 -sL --max-time 25 ' . escapeshellarg($url);
@@ -30,9 +27,6 @@ function scaricaComeChrome(string $url): string
     return $output;
 }
 
-/**
- * Estrae coordinate da addStationMarker(...) e righe HTML da $('#rilevazioni-body').append('...')
- */
 function estraiDatiDaJs(string $js): array
 {
     $markers = [];
@@ -84,6 +78,28 @@ function pulisciNum(string $v): ?float
     return preg_match('/-?\d+(?:[.,]\d+)?/', $v, $m) ? (float) str_replace(',', '.', $m[0]) : null;
 }
 
+/**
+ * Converte i gradi (0-360) nella rosa dei 16 venti (N, NNE, NE, ENE, E, ...)
+ */
+function gradiInDirezione(string $v): ?string
+{
+    $v = trim($v);
+    if ($v === '' || $v === '-') {
+        return null;
+    }
+    // Se il sensore restituisce già una sigla testuale (es. N, NNE, SW)
+    if (preg_match('/^[NESW]{1,3}$/i', $v)) {
+        return strtoupper($v);
+    }
+    $gradi = pulisciNum($v);
+    if ($gradi === null) {
+        return $v;
+    }
+    $punti = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    $indice = (int) round((fmod($gradi, 360.0) + 360.0) / 22.5) % 16;
+    return $punti[$indice];
+}
+
 try {
     $dati = [];
 
@@ -119,7 +135,7 @@ try {
         }
     }
 
-    // 3. VENTO (st=VV)
+    // 3. VENTO (st=VV) con conversione gradi -> rosa dei venti
     $resVV = estraiDatiDaJs(scaricaComeChrome($urls['VV']));
     foreach ($resVV['righe'] as [$staz, $bac, $sens, $val, $ora]) {
         if (str_contains($ora, '/') || $val === '-') continue;
@@ -128,7 +144,7 @@ try {
             $dati[$staz]['WIND'] = pulisciNum($val);
             $dati[$staz]['ora_dato'] ??= $ora;
         } elseif (stripos($sens, 'Direzione') !== false) {
-            $dati[$staz]['WIND_DIR'] = $val;
+            $dati[$staz]['WIND_DIR'] = gradiInDirezione($val);
             $dati[$staz]['ora_dato'] ??= $ora;
         }
     }
@@ -144,11 +160,22 @@ try {
         }
     }
 
+    // 5. IDROMETRIA (st=I)
+    $resI = estraiDatiDaJs(scaricaComeChrome($urls['I']));
+    foreach ($resI['righe'] as [$staz, $bac, $sens, $val, $ora]) {
+        if (str_contains($ora, '/') || $val === '-') continue;
+        $inizializza($staz, $bac, $resI['markers']);
+        if (stripos($sens, 'Livello') !== false || stripos($sens, 'Idro') !== false || stripos($sens, 'Altezza') !== false) {
+            $dati[$staz]['IDRO'] = pulisciNum($val);
+            $dati[$staz]['ora_dato'] ??= $ora;
+        }
+    }
+
     if (empty($dati)) {
         throw new RuntimeException('Nessuna rilevazione estratta.');
     }
 
-    // 5. SPEDISCE IL JSON AD ALTERVISTA
+    // 6. SPEDISCE IL JSON AD ALTERVISTA
     $ch = curl_init(DESTINAZIONE_URL);
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
